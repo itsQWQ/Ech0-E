@@ -17,6 +17,12 @@ type Service interface {
 		userAgent string,
 		dto *model.CreateCommentDto,
 	) (model.CreateCommentResult, error)
+	CreateIntegrationComment(
+		ctx context.Context,
+		clientIP,
+		userAgent string,
+		dto *model.CreateIntegrationCommentDto,
+	) (model.CreateCommentResult, error)
 	ListPublicByEchoID(ctx context.Context, echoID string) ([]model.Comment, error)
 	ListPublicComments(ctx context.Context, limit int) ([]model.Comment, error)
 	ListPanelComments(ctx context.Context, query model.ListCommentQuery) (model.PageResult[model.Comment], error)

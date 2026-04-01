@@ -672,6 +672,8 @@
     "scopeCommentRead": "Read comments",
     "scopeCommentWrite": "Write comments",
     "scopeCommentModerate": "Moderate comments",
+    "commentWriteAudienceHint": "\"Write comments\" requires the \"Integration\" audience.",
+    "commentWriteAudienceRequired": "\"Write comments\" requires the \"Integration\" audience",
     "scopeFileRead": "Read files",
     "scopeFileWrite": "Upload/Manage files",
     "scopeProfileRead": "Read profile",

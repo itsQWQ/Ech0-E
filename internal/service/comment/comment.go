@@ -20,6 +20,7 @@ import (
 	captchaCfg "github.com/lin-snow/ech0/internal/captcha"
 	"github.com/lin-snow/ech0/internal/config"
 	contracts "github.com/lin-snow/ech0/internal/event/contracts"
+	authModel "github.com/lin-snow/ech0/internal/model/auth"
 	model "github.com/lin-snow/ech0/internal/model/comment"
 	commonModel "github.com/lin-snow/ech0/internal/model/common"
 	userModel "github.com/lin-snow/ech0/internal/model/user"
@@ -115,24 +116,12 @@ func (s *CommentService) CreateComment(
 		return model.CreateCommentResult{}, err
 	}
 
-	comment := model.Comment{
-		EchoID:    strings.TrimSpace(dto.EchoID),
-		Content:   strings.TrimSpace(dto.Content),
-		IPHash:    hashClientIP(clientIP),
-		UserAgent: strings.TrimSpace(userAgent),
-		Status:    model.StatusPending,
-		Source:    model.SourceGuest,
-	}
-	if comment.EchoID == "" || comment.Content == "" {
-		return model.CreateCommentResult{},
-			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "评论内容不能为空")
-	}
-	if utf8.RuneCountInString(comment.Content) > maxCommentRunes {
-		return model.CreateCommentResult{},
-			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "评论内容不能超过200字")
+	comment, err := newCommentFromInput(clientIP, userAgent, dto.EchoID, dto.Content)
+	if err != nil {
+		return model.CreateCommentResult{}, err
 	}
 
-	if validUser && (user.IsAdmin || user.IsOwner) {
+	if validUser && canUsePrivilegedCommentIdentity(ctx, user) {
 		comment.Source = model.SourceSystem
 		comment.Nickname = user.Username
 		// 内部成员评论允许邮箱为空，不再自动填充占位邮箱。
@@ -140,63 +129,49 @@ func (s *CommentService) CreateComment(
 		comment.UserID = &user.ID
 		comment.Status = model.StatusApproved
 	} else {
-		nickname := strings.TrimSpace(dto.Nickname)
-		email := strings.TrimSpace(dto.Email)
-		website := strings.TrimSpace(dto.Website)
-		if nickname == "" || email == "" {
-			return model.CreateCommentResult{},
-				commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "昵称和邮箱不能为空")
+		if err := populateExternalCommentFields(&comment, dto.Nickname, dto.Email, dto.Website); err != nil {
+			return model.CreateCommentResult{}, err
 		}
-		if _, err := mail.ParseAddress(email); err != nil {
-			return model.CreateCommentResult{},
-				commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "邮箱格式无效")
-		}
-		if website != "" {
-			parsed, err := url.ParseRequestURI(website)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-				return model.CreateCommentResult{},
-					commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "网址格式无效")
-			}
-		}
-		comment.Nickname = nickname
-		comment.Email = email
-		comment.Website = website
 
 		if !setting.RequireApproval {
 			comment.Status = model.StatusApproved
 		}
 
-		if err := s.checkRateLimit(ctx, comment.IPHash, email, ""); err != nil {
+		if err := s.checkRateLimit(ctx, comment.IPHash, comment.Email, ""); err != nil {
 			return model.CreateCommentResult{}, err
 		}
 	}
 
-	duplicated, err := s.repo.ExistsRecentDuplicate(
-		ctx,
-		comment.EchoID,
-		comment.Content,
-		comment.Email,
-		comment.IPHash,
-		derefString(comment.UserID),
-		recentDuplicateSec,
-	)
+	return s.persistCreatedComment(ctx, &comment)
+}
+
+func (s *CommentService) CreateIntegrationComment(
+	ctx context.Context,
+	clientIP string,
+	userAgent string,
+	dto *model.CreateIntegrationCommentDto,
+) (model.CreateCommentResult, error) {
+	setting, err := s.GetSystemSetting(ctx)
 	if err != nil {
 		return model.CreateCommentResult{}, err
 	}
-	if duplicated {
+	if !setting.EnableComment {
 		return model.CreateCommentResult{},
-			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "请勿重复提交相同评论")
+			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "评论功能未启用")
 	}
 
-	if err := s.repo.CreateComment(ctx, &comment); err != nil {
+	comment, err := newCommentFromInput(clientIP, userAgent, dto.EchoID, dto.Content)
+	if err != nil {
 		return model.CreateCommentResult{}, err
 	}
-	s.emitCommentCreated(ctx, comment)
-	s.notifyOwnerAsync(ctx, "created", comment)
-	return model.CreateCommentResult{
-		ID:     comment.ID,
-		Status: comment.Status,
-	}, nil
+	if err := populateExternalCommentFields(&comment, dto.Nickname, dto.Email, dto.Website); err != nil {
+		return model.CreateCommentResult{}, err
+	}
+	if !setting.RequireApproval {
+		comment.Status = model.StatusApproved
+	}
+
+	return s.persistCreatedComment(ctx, &comment)
 }
 
 func (s *CommentService) ListPublicByEchoID(ctx context.Context, echoID string) ([]model.Comment, error) {
@@ -743,16 +718,22 @@ func (s *CommentService) resolveRequestUser(ctx context.Context) (user userModel
 	return u, true, nil
 }
 
-func ParseOptionalUserIDFromAuthHeader(authHeader string) string {
+func ParseOptionalViewerFromAuthHeader(authHeader string) viewer.Context {
 	parts := strings.SplitN(strings.TrimSpace(authHeader), " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return ""
+		return viewer.NewNoopViewer()
 	}
 	claims, err := jwtUtil.ParseToken(strings.TrimSpace(parts[1]))
 	if err != nil {
-		return ""
+		return viewer.NewNoopViewer()
 	}
-	return claims.Userid
+	return viewer.NewUserViewerWithToken(
+		claims.Userid,
+		claims.Type,
+		claims.Scopes,
+		[]string(claims.Audience),
+		claims.ID,
+	)
 }
 
 func hashClientIP(ip string) string {
@@ -776,4 +757,90 @@ func buildDiceBearURL(seed string) string {
 		trimmed = "guest"
 	}
 	return "https://api.dicebear.com/9.x/fun-emoji/svg?seed=" + url.QueryEscape(trimmed)
+}
+
+func newCommentFromInput(clientIP, userAgent, echoID, content string) (model.Comment, error) {
+	comment := model.Comment{
+		EchoID:    strings.TrimSpace(echoID),
+		Content:   strings.TrimSpace(content),
+		IPHash:    hashClientIP(clientIP),
+		UserAgent: strings.TrimSpace(userAgent),
+		Status:    model.StatusPending,
+		Source:    model.SourceGuest,
+	}
+	if comment.EchoID == "" || comment.Content == "" {
+		return model.Comment{},
+			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "评论内容不能为空")
+	}
+	if utf8.RuneCountInString(comment.Content) > maxCommentRunes {
+		return model.Comment{},
+			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "评论内容不能超过200字")
+	}
+	return comment, nil
+}
+
+func populateExternalCommentFields(comment *model.Comment, nickname, email, website string) error {
+	nickname = strings.TrimSpace(nickname)
+	email = strings.TrimSpace(email)
+	website = strings.TrimSpace(website)
+	if nickname == "" || email == "" {
+		return commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "昵称和邮箱不能为空")
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		return commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "邮箱格式无效")
+	}
+	if website != "" {
+		parsed, err := url.ParseRequestURI(website)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "网址格式无效")
+		}
+	}
+	comment.Nickname = nickname
+	comment.Email = email
+	comment.Website = website
+	return nil
+}
+
+func (s *CommentService) persistCreatedComment(
+	ctx context.Context,
+	comment *model.Comment,
+) (model.CreateCommentResult, error) {
+	duplicated, err := s.repo.ExistsRecentDuplicate(
+		ctx,
+		comment.EchoID,
+		comment.Content,
+		comment.Email,
+		comment.IPHash,
+		derefString(comment.UserID),
+		recentDuplicateSec,
+	)
+	if err != nil {
+		return model.CreateCommentResult{}, err
+	}
+	if duplicated {
+		return model.CreateCommentResult{},
+			commonModel.NewBizError(commonModel.ErrCodeInvalidRequest, "请勿重复提交相同评论")
+	}
+
+	if err := s.repo.CreateComment(ctx, comment); err != nil {
+		return model.CreateCommentResult{}, err
+	}
+	s.emitCommentCreated(ctx, *comment)
+	s.notifyOwnerAsync(ctx, "created", *comment)
+	return model.CreateCommentResult{
+		ID:     comment.ID,
+		Status: comment.Status,
+	}, nil
+}
+
+func canUsePrivilegedCommentIdentity(ctx context.Context, user userModel.User) bool {
+	if !user.IsAdmin && !user.IsOwner {
+		return false
+	}
+	v := viewer.MustFromContext(ctx)
+	if v == nil {
+		return false
+	}
+	tokenType := strings.TrimSpace(v.TokenType())
+	return tokenType == "" || tokenType == authModel.TokenTypeSession
 }

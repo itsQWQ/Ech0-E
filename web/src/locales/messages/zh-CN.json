@@ -672,6 +672,8 @@
     "scopeCommentRead": "查看评论",
     "scopeCommentWrite": "发表评论",
     "scopeCommentModerate": "评论审核",
+    "commentWriteAudienceHint": "“发表评论”需搭配“系统集成”受众。",
+    "commentWriteAudienceRequired": "发表评论权限要求受众为“系统集成”",
     "scopeFileRead": "查看文件",
     "scopeFileWrite": "上传/管理文件",
     "scopeProfileRead": "查看个人资料",

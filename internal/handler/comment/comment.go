@@ -83,6 +83,25 @@ func (h *CommentHandler) CreateComment() gin.HandlerFunc {
 	})
 }
 
+func (h *CommentHandler) CreateIntegrationComment() gin.HandlerFunc {
+	return res.Execute(func(ctx *gin.Context) res.Response {
+		var dto model.CreateIntegrationCommentDto
+		if err := ctx.ShouldBindJSON(&dto); err != nil {
+			return res.Response{Msg: commonModel.INVALID_REQUEST_BODY, Err: err}
+		}
+		result, err := h.commentService.CreateIntegrationComment(
+			ctx.Request.Context(),
+			ctx.ClientIP(),
+			ctx.Request.UserAgent(),
+			&dto,
+		)
+		if err != nil {
+			return res.Response{Err: err}
+		}
+		return res.Response{Data: result, Msg: commonModel.SUCCESS_MESSAGE}
+	})
+}
+
 func (h *CommentHandler) ListPanelComments() gin.HandlerFunc {
 	return res.Execute(func(ctx *gin.Context) res.Response {
 		query := model.ListCommentQuery{
@@ -201,12 +220,7 @@ func (h *CommentHandler) TestCommentEmail() gin.HandlerFunc {
 
 func (h *CommentHandler) attachOptionalViewer(ctx *gin.Context) {
 	auth := strings.TrimSpace(ctx.GetHeader("Authorization"))
-	userID := service.ParseOptionalUserIDFromAuthHeader(auth)
-	if userID != "" {
-		viewer.AttachToRequest(&ctx.Request, viewer.NewUserViewer(userID))
-		return
-	}
-	viewer.AttachToRequest(&ctx.Request, viewer.NewNoopViewer())
+	viewer.AttachToRequest(&ctx.Request, service.ParseOptionalViewerFromAuthHeader(auth))
 }
 
 func parseQueryInt(ctx *gin.Context, key string, def int) int {

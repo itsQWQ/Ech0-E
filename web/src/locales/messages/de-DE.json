@@ -672,6 +672,8 @@
     "scopeCommentRead": "Kommentare lesen",
     "scopeCommentWrite": "Kommentare schreiben",
     "scopeCommentModerate": "Kommentare moderieren",
+    "commentWriteAudienceHint": "„Kommentare schreiben“ erfordert die Audience „Integration“.",
+    "commentWriteAudienceRequired": "„Kommentare schreiben“ erfordert die Audience „Integration“",
     "scopeFileRead": "Dateien lesen",
     "scopeFileWrite": "Dateien hochladen/verwalten",
     "scopeProfileRead": "Profil lesen",

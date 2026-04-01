@@ -44,6 +44,7 @@ func TestSetupRouter_RegistersKeyRoutes(t *testing.T) {
 		{method: http.MethodGet, path: "/swagger/*any"},
 		{method: http.MethodPost, path: "/api/login"},
 		{method: http.MethodPost, path: "/api/echo"},
+		{method: http.MethodPost, path: "/api/comments/integration"},
 		{method: http.MethodGet, path: "/api/init/status"},
 		{method: http.MethodGet, path: "/api/settings"},
 		{method: http.MethodGet, path: "/api/agent/recent"},
