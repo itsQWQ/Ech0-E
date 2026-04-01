@@ -23,13 +23,15 @@ func (s *GoMailSender) Send(ctx context.Context, cfg MailerConfig, msg MailMessa
 		return fmt.Errorf("missing mail configuration")
 	}
 
-	port, sslPort, tlsPolicy := resolveSMTPTransport(cfg.Port)
+	port, useSSL, tlsPolicy := resolveSMTPTransport(cfg.Port)
 	opts := []mail.Option{
 		mail.WithPort(port),
 		mail.WithTimeout(10 * time.Second),
-		mail.WithSSLPort(sslPort),
 		mail.WithTLSPortPolicy(tlsPolicy),
 		mail.WithSMTPAuth(mail.SMTPAuthAutoDiscover),
+	}
+	if useSSL {
+		opts = append(opts, mail.WithSSLPort(false))
 	}
 
 	if strings.TrimSpace(cfg.Username) != "" {
