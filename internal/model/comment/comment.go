@@ -61,6 +61,14 @@ type CreateCommentDto struct {
 	CaptchaToken  string `json:"captcha_token"`
 }
 
+type CreateIntegrationCommentDto struct {
+	EchoID   string `json:"echo_id" binding:"required"`
+	Nickname string `json:"nickname" binding:"required"`
+	Email    string `json:"email" binding:"required"`
+	Website  string `json:"website"`
+	Content  string `json:"content" binding:"required"`
+}
+
 type CreateCommentResult struct {
 	ID     string `json:"id"`
 	Status Status `json:"status"`

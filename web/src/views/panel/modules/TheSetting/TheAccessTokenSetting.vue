@@ -133,6 +133,9 @@
               class="w-full h-9 bg-[var(--color-bg-surface)]! bg-op-80"
               :placeholder="t('accessTokenSetting.audiencePlaceholder')"
             />
+            <span v-if="audienceError" class="text-xs text-[var(--color-danger)]">{{
+              audienceError
+            }}</span>
           </div>
         </div>
 
@@ -142,6 +145,12 @@
           >
           <p class="text-xs text-[var(--color-text-muted)]">
             {{ t('accessTokenSetting.scopesHint') }}
+          </p>
+          <p
+            v-if="requiresIntegrationAudience"
+            class="text-xs text-[var(--color-text-muted)]"
+          >
+            {{ t('accessTokenSetting.commentWriteAudienceHint') }}
           </p>
           <div
             v-for="group in scopeGroups"
@@ -370,6 +379,7 @@ const accessTokenToAdd = ref<App.Api.Setting.AccessTokenDto>({
 })
 const nameError = ref('')
 const scopesError = ref('')
+const audienceError = ref('')
 
 const isSubmitting = ref<boolean>(false)
 const scopeLabelMap: Record<string, string> = {
@@ -432,6 +442,10 @@ function hasScope(scope: string) {
   return accessTokenToAdd.value.scopes.includes(scope)
 }
 
+const requiresIntegrationAudience = computed(() =>
+  accessTokenToAdd.value.scopes.includes('comment:write'),
+)
+
 function toggleScope(scope: string) {
   const scopes = accessTokenToAdd.value.scopes
   if (scopes.includes(scope)) {
@@ -450,11 +464,13 @@ function resetAccessTokenForm() {
   }
   nameError.value = ''
   scopesError.value = ''
+  audienceError.value = ''
 }
 
 const handleAddAccessToken = async () => {
   nameError.value = ''
   scopesError.value = ''
+  audienceError.value = ''
   const normalizedName = accessTokenToAdd.value.name.trim()
   if (!normalizedName) {
     nameError.value = String(t('accessTokenSetting.fillName'))
@@ -464,6 +480,11 @@ const handleAddAccessToken = async () => {
   if (accessTokenToAdd.value.scopes.length === 0) {
     scopesError.value = String(t('accessTokenSetting.selectScopes'))
     theToast.error(scopesError.value)
+    return
+  }
+  if (requiresIntegrationAudience.value && accessTokenToAdd.value.audience !== 'integration') {
+    audienceError.value = String(t('accessTokenSetting.commentWriteAudienceRequired'))
+    theToast.error(audienceError.value)
     return
   }
 

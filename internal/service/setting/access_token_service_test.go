@@ -46,3 +46,29 @@ func TestCreateAccessToken_RejectsAdminScopeForNonAdminUser(t *testing.T) {
 		t.Fatal("expected error for admin scope on non-admin user")
 	}
 }
+
+func TestCreateAccessToken_RejectsCommentWriteWithoutIntegrationAudience(t *testing.T) {
+	user := userModel.User{IsAdmin: true}
+	dto := &model.AccessTokenSettingDto{
+		Name:     "bad-comment-audience",
+		Expiry:   model.EIGHT_HOUR_EXPIRY,
+		Scopes:   []string{authModel.ScopeCommentWrite},
+		Audience: authModel.AudiencePublic,
+	}
+	if err := validateAccessTokenRequest(user, dto); err == nil {
+		t.Fatal("expected error for comment:write without integration audience")
+	}
+}
+
+func TestCreateAccessToken_AllowsCommentWriteWithIntegrationAudience(t *testing.T) {
+	user := userModel.User{IsAdmin: true}
+	dto := &model.AccessTokenSettingDto{
+		Name:     "comment-integration",
+		Expiry:   model.EIGHT_HOUR_EXPIRY,
+		Scopes:   []string{authModel.ScopeCommentWrite},
+		Audience: authModel.AudienceIntegration,
+	}
+	if err := validateAccessTokenRequest(user, dto); err != nil {
+		t.Fatalf("expected integration audience to pass, got %v", err)
+	}
+}

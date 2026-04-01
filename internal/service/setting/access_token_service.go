@@ -150,10 +150,22 @@ func validateAccessTokenRequest(user userModel.User, dto *model.AccessTokenSetti
 			return errors.New(commonModel.INVALID_PARAMS_BODY)
 		}
 	}
+	if requiresIntegrationAudience(dto.Scopes) && dto.Audience != authModel.AudienceIntegration {
+		return errors.New(commonModel.INVALID_PARAMS_BODY)
+	}
 	if authModel.HasAdminScope(dto.Scopes) && !user.IsAdmin {
 		return errors.New(commonModel.NO_PERMISSION_DENIED)
 	}
 	return nil
+}
+
+func requiresIntegrationAudience(scopes []string) bool {
+	for _, scope := range scopes {
+		if scope == authModel.ScopeCommentWrite {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeScopes(scopes []string) []string {
